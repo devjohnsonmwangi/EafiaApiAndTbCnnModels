@@ -72,18 +72,23 @@ export class XRaysService {
       // Fixed: Added generic type to axios.post to remove 'any' from response.data
       const { data } = await axios.post<XRayValidationResponse>(
         `${apiUrl}/predict/xray_validation`,
-        { image_base_64: imageBase64 },
+        { image_base64: imageBase64 },
         { timeout: 30000 },
       );
 
       // Fixed: Explicit boolean comparisons for strict-boolean-expressions
       xray.isValid = data.is_xray;
       xray.validationConfidence = data.confidence;
-      xray.status =
-        data.is_xray === true ? XRayStatus.PROCESSING : XRayStatus.FAILED;
 
-      if (data.is_xray === false) {
-        xray.validationError = 'Not a valid medical X-ray image';
+      if (data.is_xray === true) {
+        xray.status = XRayStatus.PROCESSING;
+        xray.validationError = null;
+      } else {
+        xray.status = XRayStatus.FAILED;
+        const confidencePercent = (data.confidence * 100).toFixed(1);
+        xray.validationError =
+          `Failed X-ray validation. This image does not appear to be a valid medical X-ray. ` +
+          `(Confidence: ${confidencePercent}%). Please upload a valid chest X-ray image.`;
       }
 
       await this.xraysRepository.save(xray);
@@ -94,9 +99,21 @@ export class XRaysService {
       if (xray === null) return;
 
       xray.status = XRayStatus.FAILED;
-      xray.validationError =
-        error instanceof Error ? error.message : 'Unknown validation error';
+      let errorMessage = 'Unknown validation error';
 
+      if (error instanceof Error) {
+        if (error.message.includes('timeout')) {
+          errorMessage =
+            'Validation service timed out. Please try uploading again.';
+        } else if (error.message.includes('ECONNREFUSED')) {
+          errorMessage =
+            'ML service is not available. Please contact administrator.';
+        } else {
+          errorMessage = `Validation failed: ${error.message}`;
+        }
+      }
+
+      xray.validationError = errorMessage;
       await this.xraysRepository.save(xray);
     }
   }
@@ -163,5 +180,21 @@ export class XRaysService {
     }
 
     return query.getMany();
+  }
+
+  async findFailedValidations(user: User): Promise<XRay[]> {
+    const query = this.xraysRepository
+      .createQueryBuilder('xray')
+      .where('xray.status = :status', { status: XRayStatus.FAILED });
+
+    if (user.role === UserRole.PHYSICIAN) {
+      query
+        .innerJoin('xray.patient', 'patient')
+        .andWhere('patient.physicianId = :physicianId', {
+          physicianId: user.id,
+        });
+    }
+
+    return query.orderBy('xray.createdAt', 'DESC').getMany();
   }
 }

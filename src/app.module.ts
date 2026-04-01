@@ -13,6 +13,10 @@ import { TbPredictionModule } from './tb-prediction/tb-prediction.module';
 import { XrayValidationModule } from './xray-validation/xray-validation.module';
 import { AuthLoggingModule } from './modules/logging/auth-logging.module';
 import { SystemLoggingModule } from './modules/logging/system-logging.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
+import { FollowUpsModule } from './modules/follow-ups/follow-ups.module';
+import { MedicalReportsModule } from './modules/medical-reports/medical-reports.module';
+import { TbWorkflowModule } from './modules/tb-workflow/tb-workflow.module';
 import { typeOrmConfig } from './config/typeorm.config';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 
@@ -37,6 +41,10 @@ import { LoggerMiddleware } from './common/middleware/logger.middleware';
     DiagnosisResultsModule,
     TbPredictionModule,
     XrayValidationModule,
+    NotificationsModule,
+    FollowUpsModule,
+    MedicalReportsModule,
+    TbWorkflowModule,
   ],
   controllers: [AppController],
   providers: [AppService],

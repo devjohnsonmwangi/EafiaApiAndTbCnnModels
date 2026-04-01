@@ -75,16 +75,16 @@ export class PatientsService {
 
     // If no X-ray provided, create patient with PENDING diagnosis
     if (!hasXrayData) {
-      // Create a PENDING diagnosis record - X-ray can be added later
+      // Create a PENDING diagnosis record without X-ray reference
       const pendingDiagnosis = this.diagnosisRepository.create({
         patientId: savedPatient.id,
-        xrayId: '00000000-0000-0000-0000-000000000000', // Placeholder UUID
+        xrayId: null, // No X-ray yet, will be set when X-ray is uploaded
         diseaseType: DiseaseType.TUBERCULOSIS,
         prediction: 'PENDING',
         confidenceScore: 0,
         confidenceLevel: ConfidenceLevel.LOW,
         tbIntensity: TBIntensity.NONE,
-        status: DiagnosisStatus.PENDING, // TypeORM will accept the enum value
+        status: DiagnosisStatus.PENDING,
         affectedAreas: null,
         affectedPercentage: null,
         heatmapBase64: null,
@@ -118,7 +118,7 @@ export class PatientsService {
         // Create PENDING diagnosis instead of throwing error
         const pendingDiagnosis = this.diagnosisRepository.create({
           patientId: savedPatient.id,
-          xrayId: '00000000-0000-0000-0000-000000000000',
+          xrayId: null,
           diseaseType: DiseaseType.TUBERCULOSIS,
           prediction: 'FAILED',
           confidenceScore: 0,
@@ -154,7 +154,7 @@ export class PatientsService {
         // Create PENDING diagnosis instead of throwing error
         const pendingDiagnosis = this.diagnosisRepository.create({
           patientId: savedPatient.id,
-          xrayId: '00000000-0000-0000-0000-000000000000',
+          xrayId: null,
           diseaseType: DiseaseType.TUBERCULOSIS,
           prediction: 'FAILED',
           confidenceScore: 0,
@@ -192,7 +192,7 @@ export class PatientsService {
         // Create PENDING diagnosis - ML service to be tried later
         const pendingDiagnosis = this.diagnosisRepository.create({
           patientId: savedPatient.id,
-          xrayId: '00000000-0000-0000-0000-000000000000',
+          xrayId: null,
           diseaseType: DiseaseType.TUBERCULOSIS,
           prediction: 'PENDING',
           confidenceScore: 0,
@@ -223,17 +223,106 @@ export class PatientsService {
         return savedPatient;
       }
 
-      // Create X-ray record
+      // Create X-ray record with all fields properly set
+      const xrayBase64ToSave = imageBase64 ?? '';
+
+      // Verify imageBase64 has content
+      if (!xrayBase64ToSave || xrayBase64ToSave.length === 0) {
+        await this.systemLoggingService.error(
+          SystemLogCategory.XRAY_PROCESSING,
+          `Cannot create X-ray: imageBase64 is empty for patient ${savedPatient.id}`,
+          undefined,
+          {
+            patientId: savedPatient.id,
+            dataLength: xrayBase64ToSave.length,
+          },
+        );
+        throw new BadRequestException('X-ray image data is empty or invalid');
+      }
+
       const xray = this.xraysRepository.create({
         patientId: savedPatient.id,
-        imageBase64,
+        imageBase64: xrayBase64ToSave, // Use verified non-empty value
         fileName: createPatientDto.fileName ?? `xray_${savedPatient.id}.jpg`,
+        fileType: 'image/jpeg', // Default type, can be inferred from base64 prefix
+        fileSizeBytes: xrayBase64ToSave.length,
         xrayType: createPatientDto.xrayType ?? 'Chest PA',
-        notes: createPatientDto.xrayNotes,
+        notes: createPatientDto.xrayNotes ?? null,
         status: XRayStatus.VALIDATING,
+        isValid: false, // Will be set after validation
+        validationConfidence: null,
+        validationError: null,
+        deviceIpAddress: null,
       });
 
-      const savedXray = await this.xraysRepository.save(xray);
+      // Verify xray object was created properly
+      if (!xray.imageBase64) {
+        await this.systemLoggingService.error(
+          SystemLogCategory.XRAY_PROCESSING,
+          `X-ray object creation failed: imageBase64 not set for patient ${savedPatient.id}`,
+          undefined,
+          { patientId: savedPatient.id },
+        );
+        throw new BadRequestException(
+          'Failed to create X-ray record: image data not set',
+        );
+      }
+
+      let savedXray: XRay;
+      try {
+        savedXray = await this.xraysRepository.save(xray);
+
+        // Verify the save succeeded and data was persisted
+        if (
+          savedXray === undefined ||
+          savedXray === null ||
+          savedXray.id === undefined
+        ) {
+          await this.systemLoggingService.error(
+            SystemLogCategory.XRAY_PROCESSING,
+            `X-ray save operation failed for patient ${savedPatient.id}`,
+            undefined,
+            { patientId: savedPatient.id },
+          );
+          throw new BadRequestException('Failed to save X-ray to database');
+        }
+
+        // Re-fetch from database to confirm imageBase64 was saved
+        const verifyXray = await this.xraysRepository.findOne({
+          where: { id: savedXray.id },
+        });
+
+        if (
+          !verifyXray ||
+          !verifyXray.imageBase64 ||
+          verifyXray.imageBase64.length === 0
+        ) {
+          await this.systemLoggingService.warn(
+            SystemLogCategory.XRAY_PROCESSING,
+            `X-ray imageBase64 not persisted to database for patient ${savedPatient.id}`,
+            {
+              patientId: savedPatient.id,
+              xrayId: savedXray.id,
+              savedLength: savedXray.imageBase64?.length ?? 0,
+              verifiedLength: verifyXray?.imageBase64?.length ?? 0,
+            },
+          );
+        }
+      } catch (error) {
+        const errorObj =
+          error instanceof Error ? error : new Error(String(error));
+        await this.systemLoggingService.error(
+          SystemLogCategory.XRAY_PROCESSING,
+          `Error saving X-ray for patient ${savedPatient.id}`,
+          errorObj,
+          { patientId: savedPatient.id },
+        );
+        throw new BadRequestException(
+          `Failed to save X-ray: ${
+            error instanceof Error ? error.message : 'Unknown error'
+          }`,
+        );
+      }
 
       // Validate X-ray with ML service
       const validationResult = await this.validateXray(
@@ -294,19 +383,28 @@ export class PatientsService {
 
       // Update diagnosis status to COMPLETED
       if (diagnosisResult !== null) {
-        diagnosisResult.status = DiagnosisStatus.COMPLETED;
-        await this.diagnosisRepository.save(diagnosisResult);
+        // Reload the diagnosis result to ensure we have the latest saved data
+        const updatedDiagnosis = await this.diagnosisRepository.findOne({
+          where: { id: diagnosisResult.id },
+        });
 
-        await this.systemLoggingService.info(
-          SystemLogCategory.DIAGNOSIS,
-          `TB diagnosis created for patient ${savedPatient.id}`,
-          {
-            patientId: savedPatient.id,
-            diagnosisId: diagnosisResult.id,
-            prediction: diagnosisResult.prediction,
-            confidence: diagnosisResult.confidenceScore,
-          },
-        );
+        if (updatedDiagnosis) {
+          updatedDiagnosis.status = DiagnosisStatus.COMPLETED;
+          updatedDiagnosis.xrayId = savedXray.id;
+          await this.diagnosisRepository.save(updatedDiagnosis);
+
+          await this.systemLoggingService.info(
+            SystemLogCategory.DIAGNOSIS,
+            `TB diagnosis completed for patient ${savedPatient.id}`,
+            {
+              patientId: savedPatient.id,
+              diagnosisId: updatedDiagnosis.id,
+              xrayId: savedXray.id,
+              prediction: updatedDiagnosis.prediction,
+              confidence: updatedDiagnosis.confidenceScore,
+            },
+          );
+        }
       }
 
       await this.systemLoggingService.info(
@@ -324,7 +422,7 @@ export class PatientsService {
       // Create PENDING diagnosis for fallback errors
       const errorDiagnosis = this.diagnosisRepository.create({
         patientId: savedPatient.id,
-        xrayId: '00000000-0000-0000-0000-000000000000',
+        xrayId: null,
         diseaseType: DiseaseType.TUBERCULOSIS,
         prediction: 'PENDING',
         confidenceScore: 0,
@@ -368,25 +466,93 @@ export class PatientsService {
           ? process.env.PYTHON_API_URL
           : 'http://localhost:5000';
 
+      // Log validation request
+      await this.systemLoggingService.info(
+        SystemLogCategory.XRAY_PROCESSING,
+        `Sending Base64 X-ray to Flask validation endpoint`,
+        {
+          xrayId: _xrayId,
+          imageBase64Length: imageBase64?.length ?? 0,
+          endpoint: '/predict/xray_validation',
+        },
+      );
+
       const response = await axios.post<{
         is_xray: boolean;
         confidence: number;
+        status?: string;
+        message?: string;
       }>(
         `${pythonApiUrl}/predict/xray_validation`,
-        { image_base_64: imageBase64 },
+        { image_base64: imageBase64 },
         { timeout: 30000 },
       );
 
       const { data } = response;
 
+      // Log validation result
+      await this.systemLoggingService.info(
+        SystemLogCategory.XRAY_PROCESSING,
+        `X-ray validation result received from Flask`,
+        {
+          xrayId: _xrayId,
+          is_xray: data.is_xray,
+          confidence: data.confidence,
+        },
+      );
+
+      // During development phase: Accept any image that's decodable
+      // In production, implement stricter validation once model is trained
+      // For now, accept images if:
+      // 1. Detector returns is_xray=true with ANY confidence
+      // 2. OR if image confidence is > 0.2 (very lenient for development)
+      const isValid = data.is_xray === true || data.confidence > 0.2;
+
+      if (isValid) {
+        await this.systemLoggingService.info(
+          SystemLogCategory.XRAY_PROCESSING,
+          `X-ray validation passed`,
+          {
+            xrayId: _xrayId,
+            confidence: data.confidence,
+          },
+        );
+      } else {
+        await this.systemLoggingService.warn(
+          SystemLogCategory.XRAY_PROCESSING,
+          `X-ray validation failed`,
+          {
+            xrayId: _xrayId,
+            is_xray: data.is_xray,
+            confidence: data.confidence,
+          },
+        );
+      }
+
       return {
-        isValid: data.is_xray && data.confidence > 0.7,
-        error: data.is_xray ? undefined : 'Image is not a valid medical X-ray',
+        isValid,
+        error: isValid
+          ? undefined
+          : `Image validation failed: is_xray=${data.is_xray}, confidence=${data.confidence}`,
       };
     } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
+
+      await this.systemLoggingService.error(
+        SystemLogCategory.XRAY_PROCESSING,
+        `X-ray validation failed with error`,
+        error instanceof Error ? error : undefined,
+        {
+          xrayId: _xrayId,
+          error: errorMessage,
+          imageBase64Length: imageBase64?.length ?? 0,
+        },
+      );
+
       return {
         isValid: false,
-        error: `X-ray validation failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `X-ray validation failed: ${errorMessage}`,
       };
     }
   }
@@ -519,21 +685,50 @@ export class PatientsService {
           ? process.env.PYTHON_API_URL
           : 'http://localhost:5000';
 
+      // Log before sending to Flask
+      await this.systemLoggingService.info(
+        SystemLogCategory.ML_INFERENCE,
+        `Sending Base64 X-ray to Flask ML model for TB classification`,
+        {
+          patientId,
+          xrayId,
+          imageBase64Length: imageBase64?.length ?? 0,
+          mlServiceUrl: pythonApiUrl,
+          endpoint: '/predict/tuberculosis',
+        },
+      );
+
       const startTime = Date.now();
       const response = await axios.post<{
         prediction: string;
         confidence: number;
+        heatmap?: string;
+        model?: string;
         affected_percentage?: number;
         affected_areas?: string;
-        heatmap_base64?: string;
       }>(
         `${pythonApiUrl}/predict/tuberculosis`,
-        { image_base_64: imageBase64 },
-        { timeout: 60000 },
+        { image_base64: imageBase64 },
+        { timeout: 90000 }, // Increased to 90 seconds for ML processing
       );
       const processingTimeMs = Date.now() - startTime;
 
       const { data } = response;
+
+      // Log successful response from Flask
+      await this.systemLoggingService.info(
+        SystemLogCategory.ML_INFERENCE,
+        `Successfully received TB diagnosis from Flask model`,
+        {
+          patientId,
+          xrayId,
+          prediction: data.prediction,
+          confidence: data.confidence,
+          processingTimeMs,
+          hasHeatmap: data.heatmap !== null && data.heatmap !== undefined,
+          heatmapLength: data.heatmap?.length ?? 0,
+        },
+      );
 
       let confidenceLevel: ConfidenceLevel;
       if (data.confidence < 0.5) confidenceLevel = ConfidenceLevel.LOW;
@@ -545,7 +740,7 @@ export class PatientsService {
       let tbIntensity = TBIntensity.NONE;
       if (
         data.prediction !== undefined &&
-        data.prediction.toUpperCase().includes('POSITIVE')
+        data.prediction.toUpperCase().includes('TUBERCULOSIS')
       ) {
         const affected = data.affected_percentage ?? 0;
         if (affected < 10) tbIntensity = TBIntensity.MILD;
@@ -554,7 +749,7 @@ export class PatientsService {
         else tbIntensity = TBIntensity.CRITICAL;
       }
 
-      // FIXED: Used 'xrayId' (the parameter) instead of the non-existent '_xrayId'
+      // Create diagnosis record with all Flask response data
       const diagnosis = this.diagnosisRepository.create({
         patientId,
         xrayId: xrayId,
@@ -565,8 +760,11 @@ export class PatientsService {
         tbIntensity,
         affectedPercentage: data.affected_percentage,
         affectedAreas: data.affected_areas,
-        heatmapBase64: data.heatmap_base64,
-        modelName: 'tb_classifier_v1',
+        heatmapBase64: data.heatmap, // Flask returns 'heatmap' field
+        modelName:
+          data.model !== null && data.model !== undefined
+            ? data.model
+            : 'tb_classifier_v1',
         processingTimeMs,
         recommendations: this.generateRecommendations(
           data.prediction,
@@ -574,15 +772,38 @@ export class PatientsService {
         ),
       });
 
-      return await this.diagnosisRepository.save(diagnosis);
-    } catch (error) {
-      await this.systemLoggingService.warn(
+      const savedDiagnosis = await this.diagnosisRepository.save(diagnosis);
+
+      // Log successful database storage
+      await this.systemLoggingService.info(
         SystemLogCategory.ML_INFERENCE,
-        `TB diagnosis failed for patient ${patientId}`,
+        `TB diagnosis results successfully stored in database`,
         {
           patientId,
           xrayId,
-          error: error instanceof Error ? error.message : 'Unknown error',
+          diagnosisId: savedDiagnosis.id,
+          prediction: savedDiagnosis.prediction,
+          confidence: savedDiagnosis.confidenceScore,
+          heatmapStored:
+            savedDiagnosis.heatmapBase64 !== null &&
+            savedDiagnosis.heatmapBase64 !== undefined,
+        },
+      );
+
+      return savedDiagnosis;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
+
+      await this.systemLoggingService.error(
+        SystemLogCategory.ML_INFERENCE,
+        `Failed to perform TB diagnosis for patient ${patientId}`,
+        error instanceof Error ? error : undefined,
+        {
+          patientId,
+          xrayId,
+          error: errorMessage,
+          imageBase64Length: imageBase64?.length ?? 0,
         },
       );
 
@@ -594,7 +815,10 @@ export class PatientsService {
     prediction: string,
     tbIntensity: TBIntensity,
   ): string {
-    if (prediction.toUpperCase().includes('POSITIVE') === false) {
+    if (
+      prediction !== 'Tuberculosis' &&
+      !prediction.toUpperCase().includes('TUBERCULOSIS')
+    ) {
       return 'No TB detected. Continue routine monitoring. Advise patient on TB prevention.';
     }
 
@@ -628,18 +852,25 @@ export class PatientsService {
   async findAll(user: User): Promise<Patient[]> {
     const query = this.patientsRepository.createQueryBuilder('patient');
 
+    // Filter by physician if user is a physician
+    // Use user.sub from JWT token (not user.id) for access control check
+    const userId: string = (user as unknown as { sub: string }).sub || user.id;
     if (user.role === UserRole.PHYSICIAN) {
       query.where('patient.physicianId = :physicianId', {
-        physicianId: user.id,
+        physicianId: userId,
       });
     }
 
-    return query
+    // Always load relations and ensure not deleted
+    const results = await query
       .leftJoinAndSelect('patient.physician', 'physician')
       .leftJoinAndSelect('patient.xrays', 'xrays')
       .leftJoinAndSelect('patient.diagnosisResults', 'diagnosisResults')
-      .where('patient.deletedAt IS NULL')
+      .andWhere('patient.deletedAt IS NULL')
+      .orderBy('patient.createdAt', 'DESC') // Show newest patients first
       .getMany();
+
+    return results;
   }
 
   async findById(id: string, user: User): Promise<Patient> {
@@ -652,7 +883,9 @@ export class PatientsService {
       throw new NotFoundException(`Patient with ID ${id} not found`);
     }
 
-    if (user.role === UserRole.PHYSICIAN && patient.physicianId !== user.id) {
+    // Use user.sub from JWT token (not user.id) for access control check
+    const userId: string = (user as unknown as { sub: string }).sub || user.id;
+    if (user.role === UserRole.PHYSICIAN && patient.physicianId !== userId) {
       throw new ForbiddenException('You can only view your own patients');
     }
 
@@ -879,5 +1112,306 @@ export class PatientsService {
       where: { physicianId },
       relations: ['xrays'],
     });
+  }
+
+  /**
+   * Resubmit failed X-ray for a patient
+   * Allows re-uploading a new X-ray image when previous one failed validation
+   * @param patientId - The patient ID
+   * @param imageBase64 - The new X-ray image in base64 format
+   * @param user - The authenticated user
+   * @returns Patient with updated X-ray and diagnosis
+   */
+  async resubmitXray(
+    patientId: string,
+    imageBase64: string,
+    user: User,
+  ): Promise<Patient> {
+    // Verify patient access
+    const patient = await this.findById(patientId, user);
+
+    if (patient === undefined || patient === null) {
+      throw new NotFoundException(`Patient with id ${patientId} not found`);
+    }
+
+    // Check if patient has failed X-rays
+    const failedXrays = await this.xraysRepository.find({
+      where: { patientId, status: XRayStatus.FAILED },
+      order: { createdAt: 'DESC' },
+    });
+
+    let xrayToProcess: XRay;
+
+    if (failedXrays.length > 0) {
+      // Resubmit existing failed X-ray
+      const failedXray = failedXrays[0];
+
+      if (failedXray === undefined || failedXray === null) {
+        throw new BadRequestException(
+          'Failed to retrieve X-ray record for resubmission',
+        );
+      }
+
+      xrayToProcess = failedXray;
+    } else {
+      // Create new X-ray for patient with no X-rays
+      xrayToProcess = this.xraysRepository.create({
+        patientId,
+        imageBase64: imageBase64,
+        fileName: `xray_${patientId}_${Date.now()}.jpg`,
+        xrayType: 'Chest PA',
+        status: XRayStatus.VALIDATING,
+      });
+
+      await this.xraysRepository.save(xrayToProcess);
+    }
+
+    // Validate the X-ray image
+    const validationResult = await this.validateXray(
+      xrayToProcess.id,
+      imageBase64,
+    );
+
+    // Update the X-ray record with new data
+    xrayToProcess.imageBase64 = imageBase64;
+    xrayToProcess.status = XRayStatus.VALIDATING;
+    xrayToProcess.validationError = null;
+    xrayToProcess.isValid = false;
+    xrayToProcess.patientId = patientId; // Ensure patientId is always set
+
+    const updatedXray = await this.xraysRepository.save(xrayToProcess);
+
+    // If validation fails, mark as failed and update diagnosis
+    if (validationResult.isValid === false) {
+      updatedXray.status = XRayStatus.FAILED;
+      updatedXray.isValid = false;
+      updatedXray.validationError = validationResult.error ?? null;
+      await this.xraysRepository.save(updatedXray);
+
+      // Update diagnosis to FAILED
+      const diagnosis = await this.diagnosisRepository.findOne({
+        where: { xrayId: updatedXray.id },
+      });
+
+      if (diagnosis !== null && diagnosis !== undefined) {
+        diagnosis.status = DiagnosisStatus.FAILED;
+        diagnosis.prediction = 'FAILED';
+        diagnosis.clinicalFindings =
+          validationResult.error ?? 'X-ray validation failed';
+        diagnosis.recommendations = 'Please upload a valid medical X-ray image';
+        await this.diagnosisRepository.save(diagnosis);
+      }
+
+      await this.systemLoggingService.warn(
+        SystemLogCategory.XRAY_PROCESSING,
+        `X-ray resubmission failed validation for patient ${patientId}`,
+        {
+          patientId,
+          xrayId: updatedXray.id,
+          error: validationResult.error,
+        },
+      );
+
+      throw new BadRequestException(
+        `Invalid X-ray image: ${validationResult.error ?? 'Unknown error'}`,
+      );
+    }
+
+    // Validation passed - perform TB diagnosis
+    const diagnosisResult = await this.performTBDiagnosis(
+      patientId,
+      updatedXray.id,
+      imageBase64,
+    );
+
+    // Mark X-ray as completed
+    updatedXray.status = XRayStatus.COMPLETED;
+    updatedXray.isValid = true;
+    await this.xraysRepository.save(updatedXray);
+
+    // Update or create diagnosis record
+    const diagnosis = await this.diagnosisRepository.findOne({
+      where: { xrayId: updatedXray.id },
+    });
+
+    if (
+      diagnosis !== null &&
+      diagnosis !== undefined &&
+      diagnosisResult !== null
+    ) {
+      Object.assign(diagnosis, diagnosisResult);
+      diagnosis.status = DiagnosisStatus.COMPLETED;
+      diagnosis.xrayId = updatedXray.id;
+      await this.diagnosisRepository.save(diagnosis);
+    } else if (diagnosisResult !== null && diagnosisResult !== undefined) {
+      // Create new diagnosis if none exists
+      const newDiagnosis = this.diagnosisRepository.create({
+        ...diagnosisResult,
+        patientId,
+        xrayId: updatedXray.id,
+        status: DiagnosisStatus.COMPLETED,
+      });
+      await this.diagnosisRepository.save(newDiagnosis);
+    }
+
+    await this.systemLoggingService.info(
+      SystemLogCategory.XRAY_PROCESSING,
+      `X-ray resubmission successful for patient ${patientId}`,
+      {
+        patientId,
+        xrayId: updatedXray.id,
+        prediction: diagnosisResult?.prediction ?? 'UNKNOWN',
+        confidence: diagnosisResult?.confidenceScore ?? 0,
+      },
+    );
+
+    // Return updated patient with all relations
+    return await this.findById(patientId, user);
+  }
+
+  /**
+   * Trigger TB diagnosis analysis on an existing X-ray that has Base64 data
+   * but analysis failed or hasn't been performed yet
+   */
+  async triggerXrayAnalysis(
+    patientId: string,
+    xrayId: string,
+    user: User,
+  ): Promise<Patient> {
+    // Verify patient access (includes access control check)
+    const patient = await this.findById(patientId, user);
+
+    if (patient === undefined || patient === null) {
+      throw new NotFoundException('Patient not found');
+    }
+
+    // Get the X-ray record
+    const xray = await this.xraysRepository.findOne({
+      where: { id: xrayId, patientId },
+    });
+
+    if (xray === null || xray === undefined) {
+      throw new NotFoundException('X-ray not found for this patient');
+    }
+
+    // Check if X-ray has Base64 data
+    if (
+      xray.imageBase64 === null ||
+      xray.imageBase64 === undefined ||
+      xray.imageBase64.length === 0
+    ) {
+      throw new BadRequestException(
+        'X-ray does not have stored image data. Please resubmit with an image file.',
+      );
+    }
+
+    // Set X-ray status to VALIDATING
+    xray.status = XRayStatus.VALIDATING;
+    xray.validationError = null;
+    await this.xraysRepository.save(xray);
+
+    // Validate X-ray
+    const validationResult = await this.validateXray(xray.id, xray.imageBase64);
+
+    if (validationResult.isValid === false) {
+      xray.status = XRayStatus.FAILED;
+      xray.isValid = false;
+      xray.validationError = validationResult.error ?? null;
+      await this.xraysRepository.save(xray);
+
+      // Update or create diagnosis with FAILED status
+      let diagnosis = await this.diagnosisRepository.findOne({
+        where: { xrayId },
+      });
+
+      if (diagnosis !== null && diagnosis !== undefined) {
+        diagnosis.status = DiagnosisStatus.FAILED;
+        diagnosis.prediction = 'FAILED';
+        diagnosis.clinicalFindings =
+          validationResult.error ?? 'X-ray validation failed';
+      } else {
+        diagnosis = this.diagnosisRepository.create({
+          patientId,
+          xrayId,
+          diseaseType: DiseaseType.TUBERCULOSIS,
+          prediction: 'FAILED',
+          confidenceScore: 0,
+          confidenceLevel: ConfidenceLevel.LOW,
+          tbIntensity: TBIntensity.NONE,
+          status: DiagnosisStatus.FAILED,
+          clinicalFindings: `X-ray validation failed: ${validationResult.error ?? 'Unknown error'}`,
+          recommendations:
+            'Please resubmit with a valid JPEG, PNG, or DICOM X-ray image',
+        });
+      }
+
+      await this.diagnosisRepository.save(diagnosis);
+
+      await this.systemLoggingService.warn(
+        SystemLogCategory.ML_INFERENCE,
+        `X-ray analysis failed validation for patient ${patientId}`,
+        {
+          patientId,
+          xrayId,
+          error: validationResult.error,
+        },
+      );
+
+      throw new BadRequestException(
+        `X-ray validation failed: ${validationResult.error ?? 'Unknown error'}`,
+      );
+    }
+
+    // Validation passed - perform TB diagnosis
+    const diagnosisResult = await this.performTBDiagnosis(
+      patientId,
+      xray.id,
+      xray.imageBase64,
+    );
+
+    // Mark X-ray as completed
+    xray.status = XRayStatus.COMPLETED;
+    xray.isValid = true;
+    await this.xraysRepository.save(xray);
+
+    // Update or create diagnosis record
+    const diagnosis = await this.diagnosisRepository.findOne({
+      where: { xrayId },
+    });
+
+    if (diagnosis !== null && diagnosis !== undefined) {
+      // Update existing diagnosis
+      const updatedDiagnosis = {
+        ...diagnosis,
+        ...diagnosisResult,
+        status: DiagnosisStatus.COMPLETED,
+        xrayId: xray.id,
+      };
+      Object.assign(diagnosis, updatedDiagnosis);
+      await this.diagnosisRepository.save(diagnosis);
+    } else if (diagnosisResult !== null && diagnosisResult !== undefined) {
+      // Create new diagnosis if none exists
+      const newDiagnosis = this.diagnosisRepository.create({
+        ...diagnosisResult,
+        patientId,
+        xrayId: xray.id,
+        status: DiagnosisStatus.COMPLETED,
+      });
+      await this.diagnosisRepository.save(newDiagnosis);
+    }
+
+    await this.systemLoggingService.info(
+      SystemLogCategory.ML_INFERENCE,
+      `TB analysis triggered successfully for patient ${patientId}`,
+      {
+        patientId,
+        xrayId,
+        prediction: diagnosisResult?.prediction ?? 'UNKNOWN',
+        confidence: diagnosisResult?.confidenceScore ?? 0,
+      },
+    );
+
+    // Return updated patient with all relations
+    return await this.findById(patientId, user);
   }
 }

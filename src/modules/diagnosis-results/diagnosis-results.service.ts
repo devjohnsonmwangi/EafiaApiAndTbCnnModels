@@ -2,23 +2,30 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { DiagnosisResult } from './diagnosis-result.entity';
 import { User, UserRole } from '../users/user.entity';
 import { CreateDiagnosisResultDto } from './diagnosis-result.dto';
+import { TbWorkflowService } from '../tb-workflow/tb-workflow.service';
+import { PatientsService } from '../patients/patients.service';
 
 @Injectable()
 export class DiagnosisResultsService {
+  private readonly logger = new Logger(DiagnosisResultsService.name);
+
   constructor(
     @InjectRepository(DiagnosisResult)
     private readonly diagnosisRepository: Repository<DiagnosisResult>,
+    private readonly tbWorkflowService: TbWorkflowService,
+    private readonly patientsService: PatientsService,
   ) {}
 
   async create(
     createDto: CreateDiagnosisResultDto,
-    _user: User,
+    user: User,
     clientIp: string,
   ): Promise<DiagnosisResult> {
     const diagnosis = this.diagnosisRepository.create({
@@ -39,7 +46,58 @@ export class DiagnosisResultsService {
       deviceIpAddress: clientIp,
     });
 
-    return await this.diagnosisRepository.save(diagnosis);
+    const savedDiagnosis = await this.diagnosisRepository.save(diagnosis);
+
+    // Trigger TB workflow if diagnosis is TB-positive
+    try {
+      if (
+        createDto.prediction?.toUpperCase() === 'TUBERCULOSIS' ||
+        createDto.prediction === 'Tuberculosis'
+      ) {
+        this.logger.log(
+          `TB-positive diagnosis detected for patient ${createDto.patientId}`,
+        );
+
+        const patient = await this.patientsService.findById(
+          createDto.patientId,
+          user,
+        );
+
+        // Get the physician from the patient or from the current user
+        const physician =
+          user.role === UserRole.PHYSICIAN ? user : (patient.physician ?? user);
+
+        await this.tbWorkflowService.executeTBPositiveWorkflow(
+          savedDiagnosis,
+          patient,
+          physician,
+        );
+
+        this.logger.log(
+          `TB workflow executed successfully for patient ${createDto.patientId}`,
+        );
+      } else if (
+        createDto.prediction?.toUpperCase() === 'NORMAL' ||
+        createDto.prediction === 'Normal'
+      ) {
+        const patient = await this.patientsService.findById(
+          createDto.patientId,
+          user,
+        );
+        await this.tbWorkflowService.executeTBNegativeWorkflow(
+          savedDiagnosis,
+          patient,
+        );
+      }
+    } catch (error) {
+      this.logger.error(
+        `Error executing TB workflow: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+      // Don't throw - the diagnosis was already saved
+      // Log the error but allow the diagnosis result to be returned
+    }
+
+    return savedDiagnosis;
   }
 
   async findAll(user: User): Promise<DiagnosisResult[]> {

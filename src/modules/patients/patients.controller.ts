@@ -10,7 +10,6 @@ import {
   UseInterceptors,
   HttpStatus,
   Request as NestRequest,
-  BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
@@ -70,24 +69,30 @@ export class PatientsController {
         createPatientDto.imageFile = req.file;
       }
 
-      // Validate that at least one image source is provided
-      if (
-        (createPatientDto.imageBase64 === undefined ||
-          createPatientDto.imageBase64 === '') &&
-        !createPatientDto.imageFile
-      ) {
-        throw new BadRequestException(
-          'Either imageBase64 (JSON) or imageFile (multipart file) is required',
-        );
-      }
+      // X-ray is now optional, but provide meaningful feedback
+      const hasXrayData =
+        (createPatientDto.imageBase64 !== undefined &&
+          createPatientDto.imageBase64 !== '') ||
+        createPatientDto.imageFile !== undefined;
 
       const patient = await this.patientsService.create(
         createPatientDto,
         req.user.sub,
       );
+
+      // Fetch complete patient data with all relations
+      const completePatient = await this.patientsService.findById(
+        patient.id,
+        req.user,
+      );
+
+      const message = hasXrayData
+        ? `Patient registered successfully with X-ray validation`
+        : `Patient registered successfully. X-ray can be uploaded later`;
+
       return ResponseFormatter.created(
-        `Patient registered successfully with X-ray validation`,
-        patient as unknown as PatientResponseDto,
+        message,
+        completePatient as unknown as PatientResponseDto,
       );
     } catch (error) {
       return ResponseFormatter.badRequest(
@@ -196,6 +201,96 @@ export class PatientsController {
       return ResponseFormatter.forbidden(
         error instanceof Error ? error.message : 'Access denied',
       ) as unknown as ApiResponse<{ message: string }>;
+    }
+  }
+
+  @Post(':patientId/xrays/resubmit')
+  @Roles(UserRole.PHYSICIAN, UserRole.ADMIN, UserRole.SUPER_ADMIN)
+  @UseInterceptors(
+    FileInterceptor('imageFile', { limits: { fileSize: 50 * 1024 * 1024 } }),
+  )
+  @ApiOperation({
+    summary: 'Resubmit failed X-ray for a patient with new image',
+  })
+  async resubmitXray(
+    @Param('patientId') patientId: string,
+    @Body() body: { imageBase64?: string },
+    @NestRequest() req: AuthenticatedRequest,
+  ): Promise<ApiResponse<PatientResponseDto>> {
+    try {
+      let imageBase64 = body.imageBase64;
+
+      // Convert uploaded file to base64 if provided
+      if (req.file !== undefined) {
+        imageBase64 = req.file.buffer.toString('base64');
+      }
+
+      if (
+        imageBase64 === undefined ||
+        imageBase64 === null ||
+        imageBase64.trim().length === 0
+      ) {
+        return ResponseFormatter.badRequest(
+          'X-ray image (imageBase64 or file) is required for resubmission',
+        ) as unknown as ApiResponse<PatientResponseDto>;
+      }
+
+      const patient = await this.patientsService.resubmitXray(
+        patientId,
+        imageBase64,
+        req.user,
+      );
+
+      return ResponseFormatter.success(
+        'X-ray resubmission successful. TB diagnosis completed.',
+        patient as unknown as PatientResponseDto,
+        HttpStatus.OK,
+      );
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('not found')) {
+        return ResponseFormatter.notFound(
+          error.message,
+        ) as unknown as ApiResponse<PatientResponseDto>;
+      }
+      return ResponseFormatter.badRequest(
+        error instanceof Error ? error.message : 'Failed to resubmit X-ray',
+      ) as unknown as ApiResponse<PatientResponseDto>;
+    }
+  }
+
+  @Post(':patientId/xrays/:xrayId/trigger-analysis')
+  @Roles(UserRole.PHYSICIAN, UserRole.ADMIN, UserRole.SUPER_ADMIN)
+  @ApiOperation({
+    summary: 'Trigger TB diagnosis analysis on an existing stored X-ray',
+  })
+  async triggerXrayAnalysis(
+    @Param('patientId') patientId: string,
+    @Param('xrayId') xrayId: string,
+    @NestRequest() req: AuthenticatedRequest,
+  ): Promise<ApiResponse<PatientResponseDto>> {
+    try {
+      const patient = await this.patientsService.triggerXrayAnalysis(
+        patientId,
+        xrayId,
+        req.user,
+      );
+
+      return ResponseFormatter.success(
+        'X-ray analysis triggered successfully. TB diagnosis completed.',
+        patient as unknown as PatientResponseDto,
+        HttpStatus.OK,
+      );
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('not found')) {
+        return ResponseFormatter.notFound(
+          error.message,
+        ) as unknown as ApiResponse<PatientResponseDto>;
+      }
+      return ResponseFormatter.badRequest(
+        error instanceof Error
+          ? error.message
+          : 'Failed to trigger X-ray analysis',
+      ) as unknown as ApiResponse<PatientResponseDto>;
     }
   }
 }

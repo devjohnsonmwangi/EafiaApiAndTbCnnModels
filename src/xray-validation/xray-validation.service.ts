@@ -39,8 +39,9 @@ export class XrayValidationService {
       interface PythonValidationResponse {
         is_xray: boolean;
         confidence: number;
-        prediction: string;
-        heatmap_base64?: string;
+        prediction?: string;
+        heatmap?: string;
+        model?: string;
       }
 
       const response = await axios.post<PythonValidationResponse>(
@@ -57,9 +58,9 @@ export class XrayValidationService {
       return {
         is_valid: isValid,
         is_xray: data.is_xray,
-        prediction: data.prediction,
+        prediction: data.prediction ?? 'X-Ray detector',
         confidence: data.confidence,
-        heatmap_base64: data.heatmap_base64,
+        heatmap_base64: data.heatmap,
         message: isValid
           ? 'Valid X-ray image. Proceeding to TB detection...'
           : `Invalid X-ray image detected. Please provide a valid chest X-ray image. (Confidence: ${(

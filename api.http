@@ -262,6 +262,9 @@ Content-Type: application/json
   "xrayNotes": "Routine TB screening X-ray"
 }
 
+
+###get  patients
+
 ### 📌 Response Includes:
 ### - Patient details
 ### - X-ray validation status (valid/invalid)

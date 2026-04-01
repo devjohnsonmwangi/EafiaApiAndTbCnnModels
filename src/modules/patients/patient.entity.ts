@@ -70,6 +70,24 @@ export class Patient {
   @Column({ type: 'uuid' })
   physicianId!: string; // ID of the physician who registered this patient
 
+  // TB Status Fields
+  @Column({
+    type: 'enum',
+    enum: ['negative', 'positive', 'suspected', 'unknown'],
+    default: 'unknown',
+    nullable: false,
+  })
+  tbStatus!: string; // TB diagnosis status for the patient
+
+  @Column({ type: 'boolean', default: false })
+  notificationSent!: boolean; // Whether TB-positive notification has been sent
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  lastTBTestDate!: string | null; // Date of last TB test
+
+  @Column({ type: 'boolean', default: false })
+  requiresFollowUp!: boolean; // Whether follow-up appointments are needed
+
   @CreateDateColumn()
   createdAt!: Date;
 

@@ -162,4 +162,23 @@ export class XRaysController {
       ) as unknown as ApiResponse<XRayResponseDto[]>;
     }
   }
+
+  @Get('status/failed')
+  @ApiOperation({ summary: 'Get all X-rays with failed validation' })
+  async findFailedValidations(
+    @NestRequest() req: AuthenticatedRequest,
+  ): Promise<ApiResponse<XRayResponseDto[]>> {
+    try {
+      const xrays = await this.xraysService.findFailedValidations(req.user);
+      return ResponseFormatter.success(
+        'Failed X-rays retrieved successfully',
+        xrays as unknown as XRayResponseDto[],
+        HttpStatus.OK,
+      );
+    } catch (error) {
+      return ResponseFormatter.internalError(
+        error instanceof Error ? error.message : 'Failed to retrieve X-rays',
+      ) as unknown as ApiResponse<XRayResponseDto[]>;
+    }
+  }
 }

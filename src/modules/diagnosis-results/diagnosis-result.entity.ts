@@ -52,8 +52,8 @@ export class DiagnosisResult {
   @Column({ type: 'uuid' })
   patientId!: string;
 
-  @Column({ type: 'uuid' })
-  xrayId!: string;
+  @Column({ type: 'uuid', nullable: true })
+  xrayId!: string | null;
 
   @Column({
     type: 'enum',
