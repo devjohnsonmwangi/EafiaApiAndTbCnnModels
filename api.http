@@ -1,0 +1,725 @@
+### ============================================================================
+### TB DETECTION API - COMPREHENSIVE REST CLIENT TEST SUITE
+### ============================================================================
+### Configuration & Environment Variables
+### ============================================================================
+
+### BASE CONFIGURATION - Update these if your services are on different hosts
+@baseUrl = http://localhost:3000
+@apiUrl = http://localhost:3000
+@mlServiceUrl = http://localhost:5000
+
+---
+
+### ============================================================================
+### TOKEN & USER ID CONSTANTS - Manually set these values
+### ============================================================================
+### Get these values from login responses when you run Section 2
+
+### Admin Credentials & Tokens
+@adminToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI0OTZlZDAwYi02MzQzLTRhOWMtODA5Mi0yY2EyZGJhM2QyODkiLCJlbWFpbCI6ImFkbWluQHRiZGV0ZWN0aW9uLmNvbSIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc3NDk1NTQxMCwiZXhwIjoxNzc1MDQxODEwfQ.KufHJ6zB4PIS_jJIiDnQV8nMhLUYQ7aQA5pK47Z2b5M
+@adminRefreshToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI0OTZlZDAwYi02MzQzLTRhOWMtODA5Mi0yY2EyZGJhM2QyODkiLCJlbWFpbCI6ImFkbWluQHRiZGV0ZWN0aW9uLmNvbSIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc3NDk1NTQxMCwiZXhwIjoxNzc1NTYwMjEwfQ.Y6PvkZd3TpYJkGqetoaD9XqfUnGzwKsBD32J5RmOts8
+@userId =496ed00b-6343-4a9c-8092-2ca2dba3d289
+
+### Physician Credentials & Tokens
+@physicianToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxYThmODRkMi0wZDIyLTQ3YzctYjQ1OS1kOThlMTZjZjUyY2UiLCJlbWFpbCI6InBoeXNpY2lhbkB0YmRldGVjdGlvbi5jb20iLCJyb2xlIjoicGh5c2ljaWFuIiwiaWF0IjoxNzc0OTU1NTIzLCJleHAiOjE3NzUwNDE5MjN9.x_p_IZjKQ3bX0uaLGEtFFfKVZPCI87uNrGBXCtAueI4
+@physicianRefreshToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxYThmODRkMi0wZDIyLTQ3YzctYjQ1OS1kOThlMTZjZjUyY2UiLCJlbWFpbCI6InBoeXNpY2lhbkB0YmRldGVjdGlvbi5jb20iLCJyb2xlIjoicGh5c2ljaWFuIiwiaWF0IjoxNzc0OTU1NTIzLCJleHAiOjE3NzU1NjAzMjN9.sllAYrlZlQTbSita3-zRS11c9C2ohCNrLwxZ0qFhu6A
+@physicianId = 1a8f84d2-0d22-47c7-b459-d98e16cf52ce
+
+---
+
+### Resource IDs - Set these after creating resources in Section 4, 5, 8
+@patientId = patient-id-here
+@xrayId = xray-id-here
+@diagnosisId = diagnosis-id-here
+
+---
+
+### IMPORTANT: How to use this file
+### 1. First run Section 2 (login requests) to get tokens
+### 2. Copy the access_token and refresh_token from login responses
+### 3. Paste them into the constants above (adminToken, physicianToken, etc.)
+### 4. Then run other sections using these pre-defined tokens
+### 5. When you create resources, copy their IDs to the constants above
+### 6. This allows testing without automatic response parsing
+
+### ============================================================================
+### API SECTIONS OVERVIEW
+### ============================================================================
+### SECTION 1:  Health & Connectivity Checks
+### SECTION 2:  Authentication Module (register, login, refresh)
+### SECTION 3:  Users Module (admin & physician management)
+### SECTION 4:  Patients Module (create, read, update, delete)
+###             ⭐ NOW REQUIRES X-RAY IMAGE DATA (imageBase64 field)
+###             ⭐ Automatically creates X-ray record on patient creation
+### SECTION 5:  X-Ray Module (X-ray image management)
+### SECTION 6:  ML Model Validation (X-ray validation)
+### SECTION 7:  ML TB Prediction (TB detection prediction)
+### SECTION 8:  System Logging (audit trail of all operations) [NEW]
+### SECTION 9:  Authentication Logging (login/logout tracking) [NEW]
+### SECTION 10: Diagnosis Results (TB diagnosis records)
+### SECTION 11: ML Model Sync Verification (direct ML service testing)
+### SECTION 12: Complete Workflow Test (end-to-end scenario)
+### SECTION 13: Error Scenarios & Edge Cases
+### SECTION 14: Performance & Load Testing Notes
+### SECTION 15: Testing Guidelines & Configuration
+###
+### 🆕 NEW FEATURES IN THIS VERSION:
+### - Comprehensive audit logging (SystemLoggingService)
+### - Authentication event tracking (AuthLoggingService)
+### - Required X-ray image data for patient registration
+### - Automatic diagnosis generation from ML pipeline
+
+### ============================================================================
+### TB DETECTION API - COMPREHENSIVE TEST SUITE
+### ============================================================================
+### Tests for API modules and ML model synchronization
+### Status: Ready for testing
+### Date: 2026-03-31
+### ============================================================================
+
+### SECTION 1: HEALTH & CONNECTIVITY CHECKS
+### ============================================================================
+
+### 1.1 Check API Health
+GET http://localhost:3000/
+
+### 1.2 Access Swagger Documentation
+GET http://localhost:3000/api
+
+### 1.3 Check ML Service Connectivity (Python Flask)
+GET {{mlServiceUrl}}/health
+Accept: application/json
+
+---
+
+### SECTION 2: AUTHENTICATION MODULE
+### ============================================================================
+
+### 2.1 Register New User (Admin)
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "admin@tbdetection.com",
+  "password": "SecurePassword123!",
+  "firstName": "Admin",
+  "lastName": "User",
+  "role": "admin",
+  "phone": "+1234567890",
+  "license": "ADM001",
+  "specialization": "Hospital Admin"
+}
+
+### 2.2 Register Physician User
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "physician@tbdetection.com",
+  "password": "SecurePassword123!",
+  "firstName": "Dr.",
+  "lastName": "Smith",
+  "role": "physician",
+  "specialization": "Pulmonologist",
+  "license": "LIC123456",
+  "phone": "+1234567891"
+}
+
+### 2.3 Register Radiologist User
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "radiologist@tbdetection.com",
+  "password": "SecurePassword123!",
+  "firstName": "Dr.",
+  "lastName": "Jones",
+  "role": "physician",
+  "specialization": "Chest Radiologist",
+  "license": "LIC789012",
+  "phone": "+1234567892"
+}
+
+### 2.4 Login Admin User
+# @name loginAdmin
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@tbdetection.com",
+  "password": "SecurePassword123!"
+}
+
+### Copy access_token from response above and paste into @adminToken at the top
+### Copy refresh_token from response above and paste into @adminRefreshToken at the top
+### Copy user.id from response above and paste into @userId at the top
+
+### 2.5 Login Physician User
+# @name loginPhysician
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "physician@tbdetection.com",
+  "password": "SecurePassword123!"
+}
+
+### Copy access_token from response above and paste into @physicianToken at the top
+### Copy refresh_token from response above and paste into @physicianRefreshToken at the top
+### Copy user.id from response above and paste into @physicianId at the top
+
+### 2.6 Refresh Admin Token
+POST {{baseUrl}}/auth/refresh-token
+Content-Type: application/json
+Authorization: Bearer {{adminToken}}
+
+{
+  "refresh_token": "{{adminRefreshToken}}"
+}
+
+---
+
+### SECTION 3: USERS MODULE
+### ============================================================================
+
+### 3.1 Get All Users (Admin only)
+GET {{baseUrl}}/users
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 3.2 Get User by ID
+GET {{baseUrl}}/users/{{userId}}
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 3.3 Get All Users (Alternative filtering on client-side)
+GET {{baseUrl}}/users
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 3.4 Deactivate User
+PATCH {{baseUrl}}/users/{{userId}}/deactivate
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+}
+
+### 3.5 Activate User
+PATCH {{baseUrl}}/users/{{userId}}/activate
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{}
+
+### 3.6 Delete User (Admin)
+DELETE {{baseUrl}}/users/{{userId}}
+Authorization: Bearer {{adminToken}}
+
+---
+
+### SECTION 4: PATIENTS MODULE
+### ============================================================================
+
+### 4.1 Create Patient WITH X-RAY DATA (REQUIRED) - JSON Method with Base64
+### ✅ IMPORTANT VALIDATIONS PERFORMED:
+### 1. ✔️ ML service health check (must be running)
+### 2. ✔️ X-ray image format validation (JPEG/PNG/DICOM)
+### 3. ✔️ X-ray validity check via AI model (confidence > 0.7)
+### 4. ✔️ TB diagnosis prediction (automatic)
+###
+### RETURNS 400 BAD REQUEST IF:
+### - ML service is not running/healthy
+### - X-ray image is not a valid image format
+### - X-ray fails validation (not a valid medical X-ray)
+### - No X-ray image provided
+###
+### METHOD 1: Provide X-ray as base64 string in JSON payload
+# @name createPatient
+POST {{baseUrl}}/patients
+Authorization: Bearer {{physicianToken}}
+Content-Type: application/json
+
+{
+  "firstName": "John",
+  "lastName": "Doe",
+  "email": "john.doe@example.com",
+  "phone": "+1234567890",
+  "dateOfBirth": "1980-05-15",
+  "gender": "Male",
+  "medicalHistory": "Hypertension, Diabetes",
+  "allergies": "Penicillin",
+  "medications": "Metformin 500mg twice daily",
+  "address": "123 Main Street",
+  "city": "New York",
+  "state": "NY",
+  "postalCode": "10001",
+  "country": "USA",
+  "imageBase64": "",
+  "fileName": "chest_xray_pa.jpg",
+  "xrayType": "Chest PA",
+  "xrayNotes": "Routine TB screening X-ray"
+}
+
+### 📌 Response Includes:
+### - Patient details
+### - X-ray validation status (valid/invalid)
+### - TB diagnosis prediction result (if X-ray valid)
+### - Diagnosis confidence level
+### - Recommendations based on TB intensity
+
+### 4.1B Create Patient - FILE UPLOAD METHOD (Multipart Form Data)
+### ✅ METHOD 2: Upload X-ray image file directly (auto-convert to base64)
+### Supported formats: JPEG, PNG, DICOM (up to 50MB)
+# @name createPatientWithFile
+POST {{baseUrl}}/patients
+Authorization: Bearer {{physicianToken}}
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="firstName"
+
+Jane
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="lastName"
+
+Smith
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="email"
+
+jane.smith@example.com
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="phone"
+
++1234567891
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="dateOfBirth"
+
+1985-08-20
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="gender"
+
+Female
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="medicalHistory"
+
+Asthma, Previous TB exposure
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="allergies"
+
+Aspirin
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="address"
+
+456 Oak Avenue
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="city"
+
+Boston
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="state"
+
+MA
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="postalCode"
+
+02101
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="xrayType"
+
+Chest PA
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="xrayNotes"
+
+Follow-up TB screening X-ray
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="imageFile"; filename="chest_xray.jpg"
+Content-Type: image/jpeg
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+### 📋 VALIDATION FLOW:
+### 1. ML Service Health Check
+###    - If service is DOWN → Returns 400 "ML model service is not available"
+###
+### 2. Image Format Validation
+###    - If not JPEG/PNG/DICOM → Returns 400 "Invalid X-ray image format"
+###    - Checks file magic numbers (signatures)
+###
+### 3. X-Ray Validity Check (AI Model)
+###    - Sends to ML service: predict/xray_validation endpoint
+###    - If confidence < 0.7 → Returns 400 "Image is not a valid medical X-ray"
+###    - If passes → Confidence > 0.7
+###
+### 4. TB Diagnosis (If X-Ray Valid)
+###    - Automatic TB prediction via ML model
+###    - Generates confidence scores and recommendations
+###
+### Extract patient ID from response and paste into @patientId at the top
+
+### 4.2 Get All Patients (Physicians see their own, Admins see all)
+GET {{baseUrl}}/patients
+Authorization: Bearer {{physicianToken}}
+Accept: application/json
+
+### 4.3 Get Patient by ID (with X-ray and Diagnosis relations)
+GET {{baseUrl}}/patients/{{patientId}}
+Authorization: Bearer {{physicianToken}}
+Accept: application/json
+
+### 4.4 Update Patient
+PUT {{baseUrl}}/patients/{{patientId}}
+Authorization: Bearer {{physicianToken}}
+Content-Type: application/json
+
+{
+  "firstName": "John",
+  "lastName": "Doe",
+  "email": "john.doe.updated@example.com",
+  "phone": "+1234567890",
+  "dateOfBirth": "1980-05-15",
+  "gender": "Male",
+  "medicalHistory": "Hypertension, Diabetes, Asthma",
+  "allergies": "Penicillin, Sulfa",
+  "medications": "Metformin 500mg twice daily, Salbutamol inhaler"
+}
+
+### 4.5 Delete Patient (Soft Delete - data preserved)
+DELETE {{baseUrl}}/patients/{{patientId}}
+Authorization: Bearer {{physicianToken}}
+
+---
+
+### SECTION 5: X-RAY MODULE
+### ============================================================================
+### ⭐ NOTE: X-rays are automatically created when registering patients (Section 4.1)
+### The endpoint below is for manual X-ray creation/updates when needed
+
+### 5.1 Create X-Ray (Manual - Usually automatic via patient registration)
+# @name createXray
+POST {{baseUrl}}/xrays
+Authorization: Bearer {{physicianToken}}
+Content-Type: application/json
+
+{
+  "patientId": "{{patientId}}",
+  "fileName": "chest_xray_front.jpg",
+  "imageBase64": "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAwCAgICAQEDEQwhIxgaJhYgIDEoIyotLy8vLzA5Nzc5Nzc5AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/bAEMBAwICAgICAQEDEQwhIxgaJhYgIDEoIyotLy8vLzA5Nzc5Nzc5AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AABEIABIAFAMBEQACEQEDEQH/xAAfAAABBQEBAAAAAAAAAAAAAAAAAQIDBAUGBwgJCv/EAC0QAAICAQMDAwIFAwMFAAAAAAAEAQIDERIEBRMhMQYiQVFhcRQygZGhscFCUtH/xAAZAQEBAQEBAAAAAAAAAAAAAQACAwT/xAAZEQEBAQEBAAAAAAAAAAAAAQACESExUf/aAAwDAQACEQMRAD8A+eBXqr0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/9k=",
+  "xrayType": "Chest PA",
+  "notes": "Routine chest X-ray for TB screening"
+}
+
+### Extract X-Ray ID
+### Copy id from response above and paste into @xrayId at the top
+
+### 5.2 Get All X-Rays
+GET {{baseUrl}}/xrays
+Authorization: Bearer {{{{adminToken}}}}
+Accept: application/json
+
+### 5.3 Get X-Ray by ID
+GET {{baseUrl}}/xrays/{{xrayId}}
+Authorization: Bearer {{physicianToken}}
+Accept: application/json
+
+### 5.4 List X-Rays (filter patientId on client-side from GET /xrays)
+GET {{baseUrl}}/xrays?patientId={{patientId}}
+Authorization: Bearer {{physicianToken}}
+Accept: application/json
+
+### 5.5 Update X-Ray Status
+PUT {{baseUrl}}/xrays/{{xrayId}}
+Authorization: Bearer {{physicianToken}}
+Content-Type: application/json
+
+{
+  "status": "processed",
+  "qualityScore": 0.95
+}
+
+### 5.6 Delete X-Ray
+DELETE {{baseUrl}}/xrays/{{xrayId}}
+Authorization: Bearer {{physicianToken}}
+
+---
+
+### SECTION 6: ML MODEL VALIDATION (X-RAY VALIDATION)
+### ============================================================================
+
+### 6.1 Validate X-Ray via API
+POST {{baseUrl}}/validation/xray
+Authorization: Bearer {{physicianToken}}
+Content-Type: application/json
+
+{
+  "imageBase64": "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAwCAgICAQEDEQwhIxgaJhYgIDEoIyotLy8vLzA5Nzc5Nzc5AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/bAEMBAwICAgICAQEDEQwhIxgaJhYgIDEoIyotLy8vLzA5Nzc5Nzc5AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAREIABIAFAMBEQACEQEDEQH/xAAfAAABBQEBAAAAAAAAAAAAAAAAAQIDBAUGBwgJCv/EAC0QAAICAQMDAwIFAwMFAAAAAAAEAQIDERIEBRMhMQYiQVFhcRQygZGhscFCUtH/xAAZAQEBAQEBAAAAAAAAAAAAAQACAwT/xAAZEQEBAQEBAAAAAAAAAAAAAQACESExUf/aAAwDAQACEQMRAD8A+eBXqr0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/9k=",
+  "fileName": "chest_xray.jpg"
+}
+
+### Check validation response
+### Expected: { is_xray: true, confidence: 0.95-0.99, prediction: "Valid X-Ray" }
+
+---
+
+### SECTION 7: TB PREDICTION MODULE (ML MODEL INTEGRATION)
+### ============================================================================
+
+### 7.1 Predict TB from Base64 Image
+# @name predictTB
+POST {{baseUrl}}/predict/tb/base64
+Authorization: Bearer {{physicianToken}}
+Content-Type: application/json
+
+{
+  "imageBase64": "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAwCAgICAQEDEQwhIxgaJhYgIDEoIyotLy8vLzA5Nzc5Nzc5AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/bAEMBAwICAgICAQEDEQwhIxgaJhYgIDEoIyotLy8vLzA5Nzc5Nzc5AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAREIABIAFAMBEQACEQEDEQH/xAAfAAABBQEBAAAAAAAAAAAAAAAAAQIDBAUGBwgJCv/EAC0QAAICAQMDAwIFAwMFAAAAAAAEAQIDERIEBRMhMQYiQVFhcRQygZGhscFCUtH/xAAZAQEBAQEBAAAAAAAAAAAAAQACAwT/xAAZEQEBAQEBAAAAAAAAAAAAAQACESExUf/aAAwDAQACEQMRAD8A+eBXqr0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/9k=",
+  "patientId": "{{patientId}}"
+}
+
+### Expected Response:
+### { 
+###   "tb_detected": true/false,
+###   "confidence": 0.0-1.0,
+###   "prediction": "TB detected" or "No TB detected",
+###   "heatmap_base64": "...",
+###   "mlModel": "tb_classifier.pth"
+### }
+
+---
+
+### SECTION 8: SYSTEM LOGGING (ADMIN ONLY)
+### ============================================================================
+### Track all system operations for audit and debugging
+### Access restricted to ADMIN role only
+
+### 8.1 Get All System Logs (with filtering)
+GET {{baseUrl}}/logs/system
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 8.2 Get System Logs by Level (debug, info, warn, error, critical)
+GET {{baseUrl}}/logs/system?level=error
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 8.3 Get System Logs by Module (auth, patients, xrays, diagnosis-results)
+GET {{baseUrl}}/logs/system?module=patients
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 8.4 Get System Logs by Date Range
+GET {{baseUrl}}/logs/system?startDate=2024-01-01&endDate=2024-01-31
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 8.5 Get Recent System Logs (last 100)
+GET {{baseUrl}}/logs/system?limit=100&offset=0
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+---
+
+### SECTION 9: AUTHENTICATION LOGGING (ADMIN/PHYSICIANS)
+### ============================================================================
+### Track authentication events for security audit
+### Access: ADMIN can see all, PHYSICIANS can see their own
+
+### 9.1 Get All Auth Logs (ADMIN ONLY)
+GET {{baseUrl}}/logs/auth
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 9.2 Get Login History for a User
+GET {{baseUrl}}/logs/auth/login-history?userId={{userId}}
+Authorization: Bearer {{physicianToken}}
+Accept: application/json
+
+### 9.3 Get Failed Login Attempts
+GET {{baseUrl}}/logs/auth/failed-attempts
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 9.4 Get Failed Attempts for Specific User
+GET {{baseUrl}}/logs/auth/failed-attempts?userId={{userId}}
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 9.5 Get Auth Logs by Action Type (login, logout, failed_login, token_refresh)
+GET {{baseUrl}}/logs/auth?action=login
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 9.6 Get Auth Logs by Date
+GET {{baseUrl}}/logs/auth?startDate=2024-01-01&endDate=2024-01-31
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+---
+
+### SECTION 10: DIAGNOSIS RESULTS MODULE
+### ============================================================================
+
+### 10.1 Create Diagnosis Result (After TB Prediction)
+# @name createDiagnosis
+POST {{baseUrl}}/diagnosis-results
+Authorization: Bearer {{physicianToken}}
+Content-Type: application/json
+
+{
+  "patientId": "{{patientId}}",
+  "xrayId": "{{xrayId}}",
+  "diseaseType": "tuberculosis",
+  "prediction": "TB detected in left upper lobe",
+  "confidenceScore": 0.92,
+  "confidenceLevel": "high",
+  "tbIntensity": "moderate",
+  "affectedAreas": "Left upper lobe",
+  "affectedPercentage": 25,
+  "mlModelUsed": "tb_classifier.pth",
+  "radiologistNotes": "Characteristic TB findings consistent with active TB",
+  "recommendedAction": "Initiate anti-TB therapy immediately"
+}
+
+### Extract diagnosis ID
+### Copy id from response above and paste into @diagnosisId at the top
+
+### 10.2 Get All Diagnosis Results
+GET {{baseUrl}}/diagnosis-results
+Authorization: Bearer {{physicianToken}}
+Accept: application/json
+
+### 10.3 Get Diagnosis by ID
+GET {{baseUrl}}/diagnosis-results/{{diagnosisId}}
+Authorization: Bearer {{physicianToken}}
+Accept: application/json
+
+### 10.4 List Diagnosis Results (filter on client-side by patientId)
+GET {{baseUrl}}/diagnosis-results
+Authorization: Bearer {{physicianToken}}
+Accept: application/json
+
+### 10.5 Alternative: Get Diagnosis by ID if you know the diagnosisId
+GET {{baseUrl}}/diagnosis-results/{{diagnosisId}}
+Authorization: Bearer {{physicianToken}}
+Accept: application/json
+
+### 10.6 Delete Diagnosis Result
+DELETE {{baseUrl}}/diagnosis-results/{{diagnosisId}}
+Authorization: Bearer {{physicianToken}}
+
+---
+
+### SECTION 11: ML MODEL SYNC VERIFICATION
+### ============================================================================
+
+### 11.1 Direct ML Service - TB Prediction Test
+POST {{mlServiceUrl}}/predict/tb
+Content-Type: application/json
+
+{
+  "image_base64": "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAwCAgICAQEDEQwhIxgaJhYgIDEoIyotLy8vLzA5Nzc5Nzc5AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/bAEMBAwICAgICAQEDEQwhIxgaJhYgIDEoIyotLy8vLzA5Nzc5Nzc5AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAREIABIAFAMBEQACEQEDEQH/xAAfAAABBQEBAAAAAAAAAAAAAAAAAQIDBAUGBwgJCv/EAC0QAAICAQMDAwIFAwMFAAAAAAAEAQIDERIEBRMhMQYiQVFhcRQygZGhscFCUtH/xAAZAQEBAQEBAAAAAAAAAAAAAQACAwT/xAAZEQEBAQEBAAAAAAAAAAAAAQACESExUf/aAAwDAQACEQMRAD8A+eBXqr0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/9k="
+}
+
+### Response should contain: { tb_detected: boolean, confidence: number, prediction: string }
+
+### 11.2 Direct ML Service - X-Ray Validation Test
+POST {{mlServiceUrl}}/validate/xray
+Content-Type: application/json
+
+{
+  "image_base64": "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAwCAgICAQEDEQwhIxgaJhYgIDEoIyotLy8vLzA5Nzc5Nzc5AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/bAEMBAwICAgICAQEDEQwhIxgaJhYgIDEoIyotLy8vLzA5Nzc5Nzc5AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAREIABIAFAMBEQACEQEDEQH/xAAfAAABBQEBAAAAAAAAAAAAAAAAAQIDBAUGBwgJCv/EAC0QAAICAQMDAwIFAwMFAAAAAAAEAQIDERIEBRMhMQYiQVFhcRQygZGhscFCUtH/xAAZAQEBAQEBAAAAAAAAAAAAAQACAwT/xAAZEQEBAQEBAAAAAAAAAAAAAQACESExUf/aAAwDAQACEQMRAD8A+eBXqr0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/9k="
+}
+
+### Response should contain: { is_xray: boolean, confidence: number, prediction: string }
+
+---
+
+### SECTION 12: COMPLETE WORKFLOW TEST (End-to-End)
+### ============================================================================
+
+### 12.1 Complete TB Detection Workflow:
+### 1. Register user
+### 2. Login user
+### 3. Create patient
+### 4. Create X-Ray record
+### 5. Validate X-Ray (ML Service)
+### 6. Run TB Prediction (ML Service)
+### 7. Create Diagnosis Result
+### 8. Retrieve all results
+
+### Steps:
+### - Run Section 2 (Login Physician)
+### - Run Section 4.1 (Create Patient with X-ray)
+### - Run Section 6.1 (Validate X-Ray - usually automatic)
+### - Run Section 7.1 (Predict TB - usually automatic)
+### - Run Section 10.1 (Create Diagnosis - usually automatic)
+### - Run Section 10.2 (Get All Diagnosis Results)
+
+---
+
+### SECTION 13: ERROR SCENARIOS & EDGE CASES
+### ============================================================================
+
+### 13.1 Test Unauthorized Access
+GET {{baseUrl}}/users
+Authorization: Bearer invalid_token
+
+### Expected: 401 Unauthorized
+
+### 13.2 Test Missing Required Fields
+POST {{baseUrl}}/patients
+Authorization: Bearer {{physicianToken}}
+Content-Type: application/json
+
+{
+  "firstName": "John"
+}
+
+### Expected: 400 Bad Request - Schema validation error
+
+### 13.3 Test Invalid Patient ID
+GET {{baseUrl}}/patients/invalid-uuid-format
+Authorization: Bearer {{physicianToken}}
+
+### Expected: 400 Bad Request or 404 Not Found
+
+### 13.4 Test Non-existent Resource
+GET {{baseUrl}}/patients/00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{physicianToken}}
+
+### Expected: 404 Not Found
+
+---
+
+### SECTION 14: PERFORMANCE & LOAD TESTING NOTES
+### ============================================================================
+
+### Notes for Performance Testing:
+### - TB Prediction typically takes 2-5 seconds (GPU-dependent)
+### - X-Ray Validation typically takes 1-2 seconds
+### - Database queries should complete in <100ms
+### - API response times should be <5 seconds
+### 
+### To run load tests, use Apache JMeter or k6:
+### k6 run performance-test.js
+###
+### Monitor:
+### - Database connection pool (max 20 connections)
+### - ML Service throughput (handle queue if needed)
+### - Memory usage (watch for memory leaks)
+### - CPU usage during predictions
+
+---
+
+### SECTION 15: TESTING GUIDELINES & CONFIGURATION
+### ============================================================================
+### 1. Update @baseUrl if API is not on localhost:3000
+### 2. Update @mlServiceUrl if ML service is not on localhost:5000
+### 3. Replace {{userId}}, {{patientId}}, {{xrayId}} with actual IDs from responses
+### 4. The @adminToken and @physicianToken are extracted from login responses
+### 5. All timestamps are auto-generated by the backend
+### 6. For file uploads, use form-data instead of base64 for larger images
+### 7. Check headers: Content-Type, Authorization are required for protected routes
+### 8. Database schema is auto-synced on startup (TYPEORM_SYNCHRONIZE=true)
+### 9. All enums are type-safe and validated
+### 10. ML models must be in /cnn_models/pth_files/ directory
